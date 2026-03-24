@@ -477,12 +477,54 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
-// Clear auto-filled fields when user manually picks a file
-document.getElementById("skill-zip").addEventListener("change", () => {
-  document.getElementById("slug").value = "";
-  document.getElementById("display-name").value = "";
+// Clear and auto-detect when user manually picks a local file
+document.getElementById("skill-zip").addEventListener("change", async () => {
+  // Clear ClawHub slug input
+  document.getElementById("skill-slug-download").value = "";
+
+  const file = document.getElementById("skill-zip").files[0];
+  if (!file) {
+    document.getElementById("slug").value = "";
+    document.getElementById("display-name").value = "";
+    document.getElementById("downloads").value = "0";
+    return;
+  }
+
+  // Derive slug from filename (strip .zip)
+  const slug = file.name.replace(/\.zip$/i, "");
+  document.getElementById("slug").value = slug;
   document.getElementById("downloads").value = "0";
+  document.getElementById("display-name").value = "";
+
+  // Try to extract displayName from SKILL.md frontmatter inside ZIP
+  try {
+    const buf = await file.arrayBuffer();
+    const name = extractNameFromZip(new Uint8Array(buf));
+    if (name) document.getElementById("display-name").value = name;
+  } catch (e) { /* ignore */ }
 });
+
+function extractNameFromZip(zipBytes) {
+  // Minimal ZIP scan: find SKILL.md, read frontmatter "name:" field
+  const decoder = new TextDecoder();
+  const data = zipBytes;
+  for (let i = 0; i < data.length - 4; i++) {
+    if (data[i] === 0x50 && data[i+1] === 0x4b && data[i+2] === 0x03 && data[i+3] === 0x04) {
+      const nameLen = data[i+26] | (data[i+27] << 8);
+      const extraLen = data[i+28] | (data[i+29] << 8);
+      const method = data[i+8] | (data[i+9] << 8);
+      const compSize = data[i+18] | (data[i+19] << 8) | (data[i+20] << 16) | (data[i+21] << 24);
+      const fname = decoder.decode(data.slice(i+30, i+30+nameLen));
+      if (fname.endsWith("SKILL.md") && method === 0) {
+        const start = i + 30 + nameLen + extraLen;
+        const content = decoder.decode(data.slice(start, start + Math.min(compSize, 2000)));
+        const m = content.match(/^---[\s\S]*?^name:\s*["']?(.+?)["']?\s*$/m);
+        if (m) return m[1];
+      }
+    }
+  }
+  return null;
+}
 
 // Download from ClawHub
 document.getElementById("download-btn").addEventListener("click", async () => {
@@ -513,16 +555,17 @@ document.getElementById("download-btn").addEventListener("click", async () => {
     dt.items.add(file);
     document.getElementById("skill-zip").files = dt.files;
 
-    // Auto-fill slug
-    if (!document.getElementById("slug").value) {
-      document.getElementById("slug").value = slug;
-    }
+    // Auto-fill slug — always overwrite
+    document.getElementById("slug").value = slug;
 
-    // Auto-fill display name and downloads from detail API
+    // Clear any previous file input visual state (we're replacing it)
+    // and auto-fill display name and downloads from detail API
+    document.getElementById("display-name").value = "";
+    document.getElementById("downloads").value = "0";
     if (detailResp.ok) {
       const detail = await detailResp.json();
       const skill = detail.skill || detail;
-      if (skill.displayName && !document.getElementById("display-name").value) {
+      if (skill.displayName) {
         document.getElementById("display-name").value = skill.displayName;
       }
       if (skill.stats && typeof skill.stats.downloads === "number") {
