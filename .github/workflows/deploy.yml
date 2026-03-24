@@ -1,0 +1,37 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    tags:
+      - 'release-*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build worker.js from index.html
+        run: |
+          python3 -c "
+          with open('index.html') as f:
+              html = f.read()
+          html_escaped = html.replace('\\\\', '\\\\\\\\').replace('\`', '\\\\\`').replace('\\\${', '\\\\\\\${')
+          print(f'''const HTML = \\\`{html_escaped}\\\`;
+
+          export default {{
+            async fetch(request) {{
+              return new Response(HTML, {{
+                headers: {{ \\\"Content-Type\\\": \\\"text/html; charset=utf-8\\\" }},
+              }});
+            }}
+          }};''')
+          " > worker.js
+
+      - name: Deploy Worker
+        run: |
+          curl -sf -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/workers/scripts/clawhub-scorer" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -F "worker.js=@worker.js;type=application/javascript+module" \
+            -F 'metadata={"main_module":"worker.js"};type=application/json'
