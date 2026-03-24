@@ -477,6 +477,13 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+// Clear auto-filled fields when user manually picks a file
+document.getElementById("skill-zip").addEventListener("change", () => {
+  document.getElementById("slug").value = "";
+  document.getElementById("display-name").value = "";
+  document.getElementById("downloads").value = "0";
+});
+
 // Download from ClawHub
 document.getElementById("download-btn").addEventListener("click", async () => {
   const slug = document.getElementById("skill-slug-download").value.trim();
