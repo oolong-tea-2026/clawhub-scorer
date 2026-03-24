@@ -487,12 +487,18 @@ document.getElementById("download-btn").addEventListener("click", async () => {
   btn.innerHTML = '<span class="spinner"></span> Downloading...';
 
   try {
-    const resp = await fetch(`${API}/download?slug=${encodeURIComponent(slug)}`);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      throw new Error(err.error || `HTTP ${resp.status}`);
+    // Download ZIP and fetch detail in parallel
+    const [zipResp, detailResp] = await Promise.all([
+      fetch(`${API}/download?slug=${encodeURIComponent(slug)}`),
+      fetch(`${API}/detail?slug=${encodeURIComponent(slug)}`),
+    ]);
+
+    if (!zipResp.ok) {
+      const err = await zipResp.json().catch(() => ({ error: zipResp.statusText }));
+      throw new Error(err.error || `HTTP ${zipResp.status}`);
     }
-    const blob = await resp.blob();
+
+    const blob = await zipResp.blob();
     const file = new File([blob], `${slug}.zip`, { type: "application/zip" });
 
     // Set file input
@@ -503,6 +509,18 @@ document.getElementById("download-btn").addEventListener("click", async () => {
     // Auto-fill slug
     if (!document.getElementById("slug").value) {
       document.getElementById("slug").value = slug;
+    }
+
+    // Auto-fill display name and downloads from detail API
+    if (detailResp.ok) {
+      const detail = await detailResp.json();
+      const skill = detail.skill || detail;
+      if (skill.displayName && !document.getElementById("display-name").value) {
+        document.getElementById("display-name").value = skill.displayName;
+      }
+      if (skill.stats && typeof skill.stats.downloads === "number") {
+        document.getElementById("downloads").value = skill.stats.downloads;
+      }
     }
 
     btn.innerHTML = '✓ Loaded';
